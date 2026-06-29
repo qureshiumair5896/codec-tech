@@ -1,0 +1,170 @@
+import tensorflow
+from tensorflow import keras
+from keras.layers import Dense, Conv2D, Flatten, AveragePooling2D
+
+from keras import Sequential
+from keras.datasets import mnist
+     
+
+(X_train, y_train), (X_test, y_test) = mnist.load_data()
+     
+Downloading data from https://storage.googleapis.com/tensorflow/tf-keras-datasets/mnist.npz
+11490434/11490434 ━━━━━━━━━━━━━━━━━━━━ 0s 0us/step
+
+# normalize pixel values
+X_train = X_train / 255.0
+X_test = X_test / 255.0
+     
+Why Reshape?
+
+Original MNIST shape:
+
+(60000,28,28)
+
+CNN expects:
+
+(batch,height,width,channels)
+
+So we convert into:
+
+(60000,28,28,1)
+
+where:
+
+1
+
+means grayscale channel.
+
+note:
+
+-1
+
+means:
+
+“Automatically calculate number of images.”
+
+NumPy figures it out automatically.
+
+Since total images are 60000:
+
+-1 → 60000
+
+
+# reshape to add channel dimension
+X_train = X_train.reshape(-1,28,28,1)
+X_test = X_test.reshape(-1,28,28,1)
+     
+Why Resize?
+
+Your model input shape:
+
+(32,32,1)
+
+But MNIST images are:
+
+28x28
+
+So resize required.
+
+
+# resize images from 28x28 -> 32x32
+X_train = tensorflow.image.resize(X_train, (32,32))
+X_test = tensorflow.image.resize(X_test, (32,32))
+     
+
+model = Sequential()
+
+model.add(Conv2D(6,kernel_size=(5,5),padding='valid',activation='tanh',input_shape=(32,32,1)))
+model.add(AveragePooling2D(pool_size=(2,2),strides=2,padding='valid'))
+
+model.add(Conv2D(6,kernel_size=(5,5),padding='valid',activation='tanh'))
+model.add(AveragePooling2D(pool_size=(2,2),strides=2,padding='valid'))
+
+model.add(Flatten())
+
+# fully connected layers
+
+model.add(Dense(120,activation='tanh'))
+
+model.add(Dense(84,activation='tanh'))
+
+# output layer
+
+model.add(Dense(10,activation='softmax'))
+     
+/usr/local/lib/python3.12/dist-packages/keras/src/layers/convolutional/base_conv.py:113: UserWarning: Do not pass an `input_shape`/`input_dim` argument to a layer. When using Sequential models, prefer using an `Input(shape)` object as the first layer in the model instead.
+  super().__init__(activity_regularizer=activity_regularizer, **kwargs)
+
+model.summary()
+     
+Model: "sequential"
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┓
+┃ Layer (type)                    ┃ Output Shape           ┃       Param # ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━┩
+│ conv2d (Conv2D)                 │ (None, 28, 28, 6)      │           156 │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ average_pooling2d               │ (None, 14, 14, 6)      │             0 │
+│ (AveragePooling2D)              │                        │               │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ conv2d_1 (Conv2D)               │ (None, 10, 10, 6)      │           906 │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ average_pooling2d_1             │ (None, 5, 5, 6)        │             0 │
+│ (AveragePooling2D)              │                        │               │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ flatten (Flatten)               │ (None, 150)            │             0 │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ dense (Dense)                   │ (None, 120)            │        18,120 │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ dense_1 (Dense)                 │ (None, 84)             │        10,164 │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ dense_2 (Dense)                 │ (None, 10)             │           850 │
+└─────────────────────────────────┴────────────────────────┴───────────────┘
+ Total params: 30,196 (117.95 KB)
+ Trainable params: 30,196 (117.95 KB)
+ Non-trainable params: 0 (0.00 B)
+
+model.compile(
+    optimizer='adam',
+    loss='sparse_categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+     
+
+# train model
+history = model.fit(
+    X_train,
+    y_train,
+    epochs=10,
+    batch_size=32,
+    validation_split=0.2
+)
+     
+Epoch 1/10
+1500/1500 ━━━━━━━━━━━━━━━━━━━━ 39s 25ms/step - accuracy: 0.9230 - loss: 0.2643 - val_accuracy: 0.9633 - val_loss: 0.1215
+Epoch 2/10
+1500/1500 ━━━━━━━━━━━━━━━━━━━━ 40s 24ms/step - accuracy: 0.9700 - loss: 0.0977 - val_accuracy: 0.9745 - val_loss: 0.0831
+Epoch 3/10
+1500/1500 ━━━━━━━━━━━━━━━━━━━━ 34s 23ms/step - accuracy: 0.9784 - loss: 0.0695 - val_accuracy: 0.9797 - val_loss: 0.0694
+Epoch 4/10
+1500/1500 ━━━━━━━━━━━━━━━━━━━━ 42s 24ms/step - accuracy: 0.9830 - loss: 0.0543 - val_accuracy: 0.9812 - val_loss: 0.0648
+Epoch 5/10
+1500/1500 ━━━━━━━━━━━━━━━━━━━━ 33s 22ms/step - accuracy: 0.9869 - loss: 0.0420 - val_accuracy: 0.9827 - val_loss: 0.0618
+Epoch 6/10
+1500/1500 ━━━━━━━━━━━━━━━━━━━━ 41s 22ms/step - accuracy: 0.9884 - loss: 0.0363 - val_accuracy: 0.9782 - val_loss: 0.0672
+Epoch 7/10
+1500/1500 ━━━━━━━━━━━━━━━━━━━━ 35s 23ms/step - accuracy: 0.9904 - loss: 0.0309 - val_accuracy: 0.9833 - val_loss: 0.0584
+Epoch 8/10
+1500/1500 ━━━━━━━━━━━━━━━━━━━━ 36s 24ms/step - accuracy: 0.9913 - loss: 0.0258 - val_accuracy: 0.9844 - val_loss: 0.0547
+Epoch 9/10
+1500/1500 ━━━━━━━━━━━━━━━━━━━━ 36s 24ms/step - accuracy: 0.9934 - loss: 0.0211 - val_accuracy: 0.9830 - val_loss: 0.0569
+Epoch 10/10
+1500/1500 ━━━━━━━━━━━━━━━━━━━━ 39s 22ms/step - accuracy: 0.9938 - loss: 0.0189 - val_accuracy: 0.9837 - val_loss: 0.0610
+
+# evaluate model
+test_loss, test_accuracy = model.evaluate(X_test, y_test)
+
+print("Test Accuracy:", test_accuracy)
+     
+313/313 ━━━━━━━━━━━━━━━━━━━━ 4s 11ms/step - accuracy: 0.9862 - loss: 0.0465
+Test Accuracy: 0.9861999750137329
