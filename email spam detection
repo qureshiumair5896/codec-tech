@@ -1,0 +1,516 @@
+"""
+Spam Email Classifier
+=====================
+Detects spam emails using Naive Bayes and SVM classifiers.
+Uses the SMS Spam Collection dataset (works similarly for emails).
+"""
+
+import numpy as np
+import pandas as pd
+import re
+import string
+from collections import Counter
+
+# ============================================================
+# SECTION 1: SAMPLE DATASET
+# ============================================================
+
+def load_sample_data():
+    """
+    Creates a sample dataset for demonstration.
+    In production, replace with your email dataset.
+    """
+    data = {
+        'label': [
+            'spam', 'ham', 'spam', 'ham', 'ham', 'spam', 'ham', 'spam',
+            'ham', 'spam', 'ham', 'ham', 'spam', 'ham', 'spam', 'ham',
+            'spam', 'ham', 'spam', 'ham', 'ham', 'spam', 'ham', 'spam',
+            'ham', 'spam', 'ham', 'ham', 'spam', 'ham', 'spam', 'ham',
+            'spam', 'ham', 'spam', 'ham', 'ham', 'spam', 'ham', 'spam'
+        ],
+        'message': [
+            "WINNER!! You have been selected for a cash prize! Claim now!",
+            "Hey, are we still meeting for lunch tomorrow?",
+            "Congratulations! You've won a free iPhone. Click here to claim.",
+            "Can you send me the report by end of day?",
+            "Meeting rescheduled to 3pm. See you there.",
+            "URGENT: Your account has been compromised. Verify immediately!",
+            "Thanks for dinner last night, it was great!",
+            "You have won $1,000,000! Send your details to claim.",
+            "Don't forget mom's birthday next week.",
+            "FREE entry to win a vacation! Text WIN to 12345",
+            "The project deadline has been extended to Friday.",
+            "Can you pick up groceries on your way home?",
+            "Act NOW! Limited time offer. 90% discount!",
+            "I'll be working from home tomorrow.",
+            "Congratulations, you are our lucky winner! Call now!",
+            "Let's catch up over coffee this weekend.",
+            "URGENT: Verify your bank account to avoid suspension!",
+            "Your Amazon order has been shipped.",
+            "You've been selected for exclusive rewards! Claim here!",
+            "Reminder: Team meeting at 10am tomorrow.",
+            "Happy birthday! Hope you have a wonderful day!",
+            "Make money fast! Work from home opportunity!",
+            "The weather looks great for hiking this Saturday.",
+            "FREE FREE FREE! Get your prize now! Limited offer!",
+            "Invoice attached for your review.",
+            "Win a brand new car! Enter the lottery today!",
+            "Can you review my code changes?",
+            "Dinner at 7pm works for me.",
+            "Click here for exclusive adult content! 18+",
+            "Flight confirmation for your trip next month.",
+            "You have unread messages! Hot singles in your area!",
+            "Please find the meeting notes attached.",
+            "Earn $5000 weekly from home! No experience needed!",
+            "The kids loved the park today.",
+            "FINAL WARNING: Your subscription expires today! Renew now!",
+            "Thanks for your help with the presentation.",
+            "See you at the gym tomorrow morning.",
+            "Claim your lottery winnings before they expire!",
+            "Movie night this Friday? I'll bring snacks.",
+            "CONGRATULATIONS! You qualify for a free cruise!"
+        ]
+    }
+    return pd.DataFrame(data)
+
+
+# ============================================================
+# SECTION 2: TEXT PREPROCESSING
+# ============================================================
+
+class TextPreprocessor:
+    """Handles text cleaning and preprocessing."""
+    
+    def __init__(self):
+        self.stop_words = {
+            'i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves',
+            'you', 'your', 'yours', 'yourself', 'yourselves', 'he', 'him',
+            'his', 'himself', 'she', 'her', 'hers', 'herself', 'it', 'its',
+            'itself', 'they', 'them', 'their', 'theirs', 'themselves',
+            'what', 'which', 'who', 'whom', 'this', 'that', 'these', 'those',
+            'am', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have',
+            'has', 'had', 'having', 'do', 'does', 'did', 'doing', 'a', 'an',
+            'the', 'and', 'but', 'if', 'or', 'because', 'as', 'until',
+            'while', 'of', 'at', 'by', 'for', 'with', 'about', 'against',
+            'between', 'into', 'through', 'during', 'before', 'after',
+            'above', 'below', 'to', 'from', 'up', 'down', 'in', 'out', 'on',
+            'off', 'over', 'under', 'again', 'further', 'then', 'once'
+        }
+    
+    def clean_text(self, text):
+        """Clean and normalize text."""
+        # Convert to lowercase
+        text = text.lower()
+        # Remove URLs
+        text = re.sub(r'http\S+|www\S+|https\S+', '', text)
+        # Remove email addresses
+        text = re.sub(r'\S+@\S+', '', text)
+        # Remove numbers
+        text = re.sub(r'\d+', '', text)
+        # Remove punctuation
+        text = text.translate(str.maketrans('', '', string.punctuation))
+        # Remove extra whitespace
+        text = ' '.join(text.split())
+        return text
+    
+    def tokenize(self, text):
+        """Split text into tokens and remove stop words."""
+        tokens = text.split()
+        tokens = [t for t in tokens if t not in self.stop_words and len(t) > 2]
+        return tokens
+    
+    def preprocess(self, text):
+        """Full preprocessing pipeline."""
+        cleaned = self.clean_text(text)
+        tokens = self.tokenize(cleaned)
+        return tokens
+
+
+# ============================================================
+# SECTION 3: FEATURE EXTRACTION (TF-IDF FROM SCRATCH)
+# ============================================================
+
+class TfidfVectorizer:
+    """Simple TF-IDF vectorizer implementation."""
+    
+    def __init__(self, max_features=1000):
+        self.max_features = max_features
+        self.vocabulary = {}
+        self.idf = {}
+    
+    def fit(self, documents):
+        """Build vocabulary and compute IDF values."""
+        # Count document frequency for each term
+        doc_freq = Counter()
+        all_terms = Counter()
+        
+        for doc in documents:
+            unique_terms = set(doc)
+            for term in unique_terms:
+                doc_freq[term] += 1
+            for term in doc:
+                all_terms[term] += 1
+        
+        # Select top features by frequency
+        most_common = all_terms.most_common(self.max_features)
+        self.vocabulary = {term: idx for idx, (term, _) in enumerate(most_common)}
+        
+        # Compute IDF
+        n_docs = len(documents)
+        for term, idx in self.vocabulary.items():
+            self.idf[term] = np.log((n_docs + 1) / (doc_freq[term] + 1)) + 1
+        
+        return self
+    
+    def transform(self, documents):
+        """Transform documents to TF-IDF vectors."""
+        n_docs = len(documents)
+        n_features = len(self.vocabulary)
+        matrix = np.zeros((n_docs, n_features))
+        
+        for doc_idx, doc in enumerate(documents):
+            # Compute term frequency
+            term_counts = Counter(doc)
+            doc_len = len(doc) if doc else 1
+            
+            for term, count in term_counts.items():
+                if term in self.vocabulary:
+                    feat_idx = self.vocabulary[term]
+                    tf = count / doc_len
+                    matrix[doc_idx, feat_idx] = tf * self.idf[term]
+        
+        # L2 normalize each row
+        norms = np.sqrt((matrix ** 2).sum(axis=1, keepdims=True))
+        norms[norms == 0] = 1
+        matrix = matrix / norms
+        
+        return matrix
+    
+    def fit_transform(self, documents):
+        """Fit and transform in one step."""
+        self.fit(documents)
+        return self.transform(documents)
+
+
+# ============================================================
+# SECTION 4: NAIVE BAYES CLASSIFIER
+# ============================================================
+
+class NaiveBayesClassifier:
+    """Multinomial Naive Bayes classifier."""
+    
+    def __init__(self, alpha=1.0):
+        self.alpha = alpha  # Laplace smoothing
+        self.class_priors = {}
+        self.feature_probs = {}
+        self.classes = []
+    
+    def fit(self, X, y):
+        """Train the classifier."""
+        n_samples, n_features = X.shape
+        self.classes = np.unique(y)
+        
+        for c in self.classes:
+            # Get samples belonging to this class
+            X_c = X[y == c]
+            
+            # Class prior probability
+            self.class_priors[c] = len(X_c) / n_samples
+            
+            # Feature probabilities with Laplace smoothing
+            feature_counts = X_c.sum(axis=0) + self.alpha
+            total_count = feature_counts.sum()
+            self.feature_probs[c] = feature_counts / total_count
+        
+        return self
+    
+    def predict(self, X):
+        """Predict class labels."""
+        predictions = []
+        
+        for sample in X:
+            class_scores = {}
+            for c in self.classes:
+                # Log probability to avoid underflow
+                log_prior = np.log(self.class_priors[c])
+                
+                # Sum of log probabilities for features
+                log_likelihood = np.sum(sample * np.log(self.feature_probs[c] + 1e-10))
+                
+                class_scores[c] = log_prior + log_likelihood
+            
+            # Predict class with highest score
+            predictions.append(max(class_scores, key=class_scores.get))
+        
+        return np.array(predictions)
+    
+    def predict_proba(self, X):
+        """Predict class probabilities."""
+        probabilities = []
+        
+        for sample in X:
+            class_scores = {}
+            for c in self.classes:
+                log_prior = np.log(self.class_priors[c])
+                log_likelihood = np.sum(sample * np.log(self.feature_probs[c] + 1e-10))
+                class_scores[c] = log_prior + log_likelihood
+            
+            # Convert log probabilities to probabilities
+            max_score = max(class_scores.values())
+            exp_scores = {c: np.exp(s - max_score) for c, s in class_scores.items()}
+            total = sum(exp_scores.values())
+            probs = {c: s / total for c, s in exp_scores.items()}
+            probabilities.append(probs)
+        
+        return probabilities
+
+
+# ============================================================
+# SECTION 5: SVM CLASSIFIER
+# ============================================================
+
+class SVMClassifier:
+    """Support Vector Machine using gradient descent."""
+    
+    def __init__(self, learning_rate=0.001, lambda_param=0.01, n_iterations=1000):
+        self.lr = learning_rate
+        self.lambda_param = lambda_param
+        self.n_iterations = n_iterations
+        self.weights = None
+        self.bias = None
+    
+    def fit(self, X, y):
+        """Train the SVM classifier."""
+        n_samples, n_features = X.shape
+        
+        # Convert labels to -1 and 1
+        y_encoded = np.where(y == np.unique(y)[0], -1, 1)
+        
+        # Initialize weights
+        self.weights = np.zeros(n_features)
+        self.bias = 0
+        
+        # Gradient descent
+        for _ in range(self.n_iterations):
+            for idx, x_i in enumerate(X):
+                condition = y_encoded[idx] * (np.dot(x_i, self.weights) + self.bias) >= 1
+                
+                if condition:
+                    # Only regularization gradient
+                    self.weights -= self.lr * (2 * self.lambda_param * self.weights)
+                else:
+                    # Full gradient
+                    self.weights -= self.lr * (
+                        2 * self.lambda_param * self.weights - 
+                        np.dot(x_i, y_encoded[idx])
+                    )
+                    self.bias -= self.lr * (-y_encoded[idx])
+        
+        self.classes = np.unique(y)
+        return self
+    
+    def predict(self, X):
+        """Predict class labels."""
+        linear_output = np.dot(X, self.weights) + self.bias
+        predictions = np.sign(linear_output)
+        
+        # Map back to original labels
+        return np.where(predictions <= 0, self.classes[0], self.classes[1])
+    
+    def decision_function(self, X):
+        """Get decision scores."""
+        return np.dot(X, self.weights) + self.bias
+
+
+# ============================================================
+# SECTION 6: MODEL EVALUATION
+# ============================================================
+
+def train_test_split(X, y, test_size=0.2, random_state=42):
+    """Split data into training and test sets."""
+    np.random.seed(random_state)
+    n_samples = len(y)
+    n_test = int(n_samples * test_size)
+    
+    indices = np.random.permutation(n_samples)
+    test_indices = indices[:n_test]
+    train_indices = indices[n_test:]
+    
+    return X[train_indices], X[test_indices], y[train_indices], y[test_indices]
+
+
+def calculate_metrics(y_true, y_pred, positive_label='spam'):
+    """Calculate precision, recall, F1-score, and accuracy."""
+    tp = sum((yt == positive_label and yp == positive_label) for yt, yp in zip(y_true, y_pred))
+    fp = sum((yt != positive_label and yp == positive_label) for yt, yp in zip(y_true, y_pred))
+    fn = sum((yt == positive_label and yp != positive_label) for yt, yp in zip(y_true, y_pred))
+    tn = sum((yt != positive_label and yp != positive_label) for yt, yp in zip(y_true, y_pred))
+    
+    accuracy = (tp + tn) / len(y_true) if len(y_true) > 0 else 0
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+    
+    return {
+        'accuracy': accuracy,
+        'precision': precision,
+        'recall': recall,
+        'f1_score': f1,
+        'confusion_matrix': {'TP': tp, 'FP': fp, 'FN': fn, 'TN': tn}
+    }
+
+
+def print_metrics(metrics, model_name):
+    """Print evaluation metrics."""
+    print(f"\n{'='*50}")
+    print(f"{model_name} Results")
+    print('='*50)
+    print(f"Accuracy:  {metrics['accuracy']:.4f}")
+    print(f"Precision: {metrics['precision']:.4f}")
+    print(f"Recall:    {metrics['recall']:.4f}")
+    print(f"F1-Score:  {metrics['f1_score']:.4f}")
+    print(f"\nConfusion Matrix:")
+    cm = metrics['confusion_matrix']
+    print(f"  TP: {cm['TP']}  |  FP: {cm['FP']}")
+    print(f"  FN: {cm['FN']}  |  TN: {cm['TN']}")
+
+
+# ============================================================
+# SECTION 7: SPAM CLASSIFIER WRAPPER
+# ============================================================
+
+class SpamClassifier:
+    """Complete spam classification pipeline."""
+    
+    def __init__(self, model_type='naive_bayes'):
+        self.model_type = model_type
+        self.preprocessor = TextPreprocessor()
+        self.vectorizer = TfidfVectorizer(max_features=500)
+        
+        if model_type == 'naive_bayes':
+            self.model = NaiveBayesClassifier()
+        elif model_type == 'svm':
+            self.model = SVMClassifier(learning_rate=0.001, n_iterations=1000)
+        else:
+            raise ValueError("Model type must be 'naive_bayes' or 'svm'")
+    
+    def fit(self, messages, labels):
+        """Train the classifier."""
+        # Preprocess messages
+        processed = [self.preprocessor.preprocess(msg) for msg in messages]
+        
+        # Vectorize
+        X = self.vectorizer.fit_transform(processed)
+        y = np.array(labels)
+        
+        # Train model
+        self.model.fit(X, y)
+        
+        return self
+    
+    def predict(self, messages):
+        """Predict spam/ham for messages."""
+        if isinstance(messages, str):
+            messages = [messages]
+        
+        processed = [self.preprocessor.preprocess(msg) for msg in messages]
+        X = self.vectorizer.transform(processed)
+        
+        return self.model.predict(X)
+    
+    def classify_email(self, email_text):
+        """Classify a single email with explanation."""
+        prediction = self.predict(email_text)[0]
+        
+        result = {
+            'text': email_text[:100] + '...' if len(email_text) > 100 else email_text,
+            'prediction': prediction,
+            'is_spam': prediction == 'spam'
+        }
+        
+        return result
+
+
+# ============================================================
+# SECTION 8: MAIN EXECUTION
+# ============================================================
+
+def main():
+    print("="*60)
+    print("       SPAM EMAIL CLASSIFIER")
+    print("       Using Naive Bayes and SVM")
+    print("="*60)
+    
+    # Load data
+    print("\n[1] Loading dataset...")
+    df = load_sample_data()
+    print(f"    Total samples: {len(df)}")
+    print(f"    Spam: {sum(df['label'] == 'spam')}")
+    print(f"    Ham:  {sum(df['label'] == 'ham')}")
+    
+    # Preprocess
+    print("\n[2] Preprocessing text...")
+    preprocessor = TextPreprocessor()
+    processed_messages = [preprocessor.preprocess(msg) for msg in df['message']]
+    
+    # Vectorize
+    print("\n[3] Extracting TF-IDF features...")
+    vectorizer = TfidfVectorizer(max_features=500)
+    X = vectorizer.fit_transform(processed_messages)
+    y = np.array(df['label'])
+    print(f"    Feature matrix shape: {X.shape}")
+    
+    # Split data
+    print("\n[4] Splitting data (80% train, 20% test)...")
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+    print(f"    Training samples: {len(y_train)}")
+    print(f"    Test samples: {len(y_test)}")
+    
+    # Train and evaluate Naive Bayes
+    print("\n[5] Training Naive Bayes classifier...")
+    nb_classifier = NaiveBayesClassifier()
+    nb_classifier.fit(X_train, y_train)
+    nb_predictions = nb_classifier.predict(X_test)
+    nb_metrics = calculate_metrics(y_test, nb_predictions)
+    print_metrics(nb_metrics, "NAIVE BAYES")
+    
+    # Train and evaluate SVM
+    print("\n[6] Training SVM classifier...")
+    svm_classifier = SVMClassifier(learning_rate=0.001, n_iterations=1000)
+    svm_classifier.fit(X_train, y_train)
+    svm_predictions = svm_classifier.predict(X_test)
+    svm_metrics = calculate_metrics(y_test, svm_predictions)
+    print_metrics(svm_metrics, "SVM")
+    
+    # Demo: Classify new emails
+    print("\n" + "="*60)
+    print("DEMO: Classifying New Emails")
+    print("="*60)
+    
+    # Create full classifier pipeline
+    spam_filter = SpamClassifier(model_type='naive_bayes')
+    spam_filter.fit(df['message'], df['label'])
+    
+    test_emails = [
+        "CONGRATULATIONS! You've won a FREE vacation! Claim now!",
+        "Hi John, can we reschedule our meeting to tomorrow at 2pm?",
+        "URGENT: Your account will be suspended! Verify immediately!",
+        "Thanks for the birthday wishes! See you at the party.",
+        "Make $10,000 weekly from home! No experience required!"
+    ]
+    
+    print("\nClassification Results:")
+    print("-" * 60)
+    for email in test_emails:
+        result = spam_filter.classify_email(email)
+        status = "🚫 SPAM" if result['is_spam'] else "✅ HAM"
+        print(f"\n{status}")
+        print(f"   '{result['text']}'")
+    
+    print("\n" + "="*60)
+    print("Classification complete!")
+    print("="*60)
+
+
+if __name__ == "__main__":
+    main()
